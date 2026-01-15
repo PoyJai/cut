@@ -79,6 +79,13 @@ try {
             50% { transform: scale(1.4); }
             100% { transform: scale(1.1); }
         }
+        .heart-active i {
+            color: #ec4899 !important; /* สี pink-500 */
+            transform: scale(1.2);
+        }
+        .heart-active {
+            background-color: #fdf2f8 !important; /* pink-50 */
+        }
         
     </style>
 </head>
@@ -362,17 +369,25 @@ try {
             document.getElementById('modalImage').src = src;
         }
         function toggleWishlist(button, productId) {
-            button.classList.toggle('heart-active');
             const formData = new FormData();
             formData.append('product_id', productId);
+
             fetch('save_favorite.php', {
                 method: 'POST',
                 body: formData
             })
             .then(response => response.json())
             .then(data => {
-                console.log(data.message);
-            });
+                if (data.status === 'added') {
+                    button.classList.add('heart-active');
+                    // เพิ่ม Effect หรือ Toast แจ้งเตือนเบาๆ
+                } else if (data.status === 'removed') {
+                    button.classList.remove('heart-active');
+                } else if (data.status === 'error') {
+                    alert(data.message); // เช่น "กรุณาล็อกอินก่อน"
+                }
+            })
+            .catch(error => console.error('Error:', error));
         }
     </script>
 </body>
