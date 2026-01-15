@@ -1,33 +1,52 @@
 <?php
 session_start();
-require('server.php'); // เชื่อมต่อฐานข้อมูลผ่าน PDO
+include('server.php'); 
 
-// ตรวจสอบว่าได้ล็อกอินหรือยัง
-if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
-    header("location: login.php");
-    exit;
-}
 
-// --- ระบบแบ่งหน้า (Pagination) ---
-$items_per_page = 8; // แสดง 8 สินค้าต่อหน้า
-$current_page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-if ($current_page < 1) $current_page = 1;
-$offset = ($current_page - 1) * $items_per_page;
+if (isset($_POST['login_user'])) {
+    $username = $_POST['username'];
+    $password = $_POST['password'];
 
-try {
-    // 1. นับจำนวนสินค้าทั้งหมด
-    $total_stmt = $pdo->query("SELECT COUNT(*) FROM products");
-    $total_items = $total_stmt->fetchColumn();
-    $total_pages = ceil($total_items / $items_per_page);
+    if (empty($username) || empty($password)) {
+        $_SESSION['error'] = "กรุณากรอกข้อมูลให้ครบถ้วน";
+        header("location: login.php");
+        exit;
+    }
+    try {
+$stmt = $pdo->prepare("
+    SELECT p.*, f.id AS is_favorite 
+    FROM products p 
+    LEFT JOIN favorites f ON p.id = f.product_id AND f.user_id = :user_id 
+    ORDER BY p.id DESC LIMIT :limit OFFSET :offset
+");
+$stmt->bindValue(':user_id', $_SESSION['user_id'], PDO::PARAM_INT);
+$stmt->bindValue(':limit', $items_per_page, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$stmt->execute();
+$products = $stmt->fetchAll();
 
-    // 2. ดึงข้อมูลสินค้าเฉพาะหน้านั้นๆ (8 ชิ้น)
-    $stmt = $pdo->prepare("SELECT * FROM products ORDER BY id DESC LIMIT :limit OFFSET :offset");
-    $stmt->bindValue(':limit', $items_per_page, PDO::PARAM_INT);
-    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-    $stmt->execute();
-    $products = $stmt->fetchAll();
-} catch (PDOException $e) {
-    die("เกิดข้อผิดพลาดในการดึงข้อมูล: " . $e->getMessage());
+        if ($user) {
+            if (password_verify($password, $user['password'])) {
+                $_SESSION['loggedin'] = true;
+                $_SESSION['username'] = $user['username'];
+                
+                // --- จุดสำคัญที่เพิ่มเข้ามา ---
+                $_SESSION['user_id'] = $user['id']; 
+                // --------------------------
+
+                header("location: index.php");
+                exit;
+            } else {
+                $_SESSION['error'] = "รหัสผ่านไม่ถูกต้อง";
+            }
+        } else {
+            $_SESSION['error'] = "ไม่พบชื่อผู้ใช้งาน";
+        }
+        header("location: login.php");
+        exit;
+    } catch (PDOException $e) {
+        die("Error: " . $e->getMessage());
+    }
 }
 ?>
 
@@ -85,6 +104,10 @@ try {
         }
         .heart-active {
             background-color: #fdf2f8 !important; /* pink-50 */
+        }
+        .heart-active {
+        background-color: #fdf2f8 !important; /* พื้นหลังสีชมพูอ่อน */
+        border: 1px solid #f9a8d4 !important;
         }
         
     </style>
@@ -178,8 +201,9 @@ try {
                     <?php foreach ($products as $item): ?>
                         <div class="product-card bg-white rounded-[2rem] overflow-hidden shadow-sm border border-pink-50 flex flex-col group relative">
                             
-                            <button onclick="event.stopPropagation(); toggleWishlist(this, <?php echo $item['id']; ?>)" 
-                                class="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-gray-300 hover:text-pink-500 transition-all z-10 shadow-sm">
+                            <button onclick="toggleWishlist(this, <?php echo $product['id']; ?>)" 
+                                class="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-400 hover:text-pink-500 transition-all duration-300 z-10 shadow-sm 
+                                <?php echo in_array($product['id'], $user_favs) ? 'heart-active' : ''; ?>">
                                 <i class="fas fa-heart"></i>
                             </button>
 
@@ -368,7 +392,7 @@ try {
         function changeMainImage(src) {
             document.getElementById('modalImage').src = src;
         }
-        function toggleWishlist(button, productId) {
+        function toggleFavorite(button, productId) {
             const formData = new FormData();
             formData.append('product_id', productId);
 
@@ -380,11 +404,15 @@ try {
             .then(data => {
                 if (data.status === 'added') {
                     button.classList.add('heart-active');
-                    // เพิ่ม Effect หรือ Toast แจ้งเตือนเบาๆ
                 } else if (data.status === 'removed') {
                     button.classList.remove('heart-active');
-                } else if (data.status === 'error') {
-                    alert(data.message); // เช่น "กรุณาล็อกอินก่อน"
+                    
+                    // ถ้าอยู่ในหน้า Favorite.php ให้ลบ Card ออกด้วย (ถ้าต้องการ)
+                    if(window.location.pathname.includes('Favorite.php')) {
+                        const card = button.closest('.product-card');
+                        card.style.opacity = '0';
+                        setTimeout(() => card.remove(), 300);
+                    }
                 }
             })
             .catch(error => console.error('Error:', error));
