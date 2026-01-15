@@ -2,71 +2,48 @@
 session_start();
 include('server.php'); 
 
-// ถ้าเข้าสู่ระบบอยู่แล้ว นำไปที่หน้าหลักทันที
 if (isset($_SESSION["loggedin"]) && $_SESSION["loggedin"] === true) {
     header("location: index.php");
     exit;
 }
 
 if (isset($_POST['login_user'])) {
-    
-    // รับค่าและทำความสะอาด
-    $username = mysqli_real_escape_string($conn, $_POST['username']);
+    $username = $_POST['username'];
     $password = $_POST['password'];
 
-    // 1. ตรวจสอบว่าผู้ใช้กรอกข้อมูลครบถ้วนหรือไม่
-    if (empty($username)) {
-        $_SESSION['error'] = "กรุณากรอกชื่อผู้ใช้งาน";
-        header("location: login.php");
-        exit;
-    }
-    if (empty($password)) {
-        $_SESSION['error'] = "กรุณากรอกรหัสผ่าน";
+    if (empty($username) || empty($password)) {
+        $_SESSION['error'] = "กรุณากรอกข้อมูลให้ครบถ้วน";
         header("location: login.php");
         exit;
     }
 
-    // 2. ค้นหาชื่อผู้ใช้งานในฐานข้อมูล
-    $sql = "SELECT username, password FROM users WHERE username='$username' LIMIT 1";
-    $result = mysqli_query($conn, $sql); 
+    try {
+        // แก้ไข: เพิ่ม 'id' เข้าไปใน SELECT เพื่อให้นำไปใช้งานต่อได้
+        $stmt = $pdo->prepare("SELECT id, username, password FROM users WHERE username = :username LIMIT 1");
+        $stmt->bindParam(':username', $username);
+        $stmt->execute();
+        $user = $stmt->fetch();
 
-    // ตรวจสอบข้อผิดพลาดของ SQL Query
-    if ($result === FALSE) {
-        $_SESSION['error'] = "เกิดข้อผิดพลาดในการดึงข้อมูลฐานข้อมูล: " . mysqli_error($conn);
-        header("location: login.php");
-        exit();
-    }
-    
-    // 3. ตรวจสอบจำนวนแถวที่ค้นหาได้
-    if (mysqli_num_rows($result) == 1) {
-        $user = mysqli_fetch_assoc($result);
-        
-        // 4. ตรวจสอบรหัสผ่าน: นี่คือส่วนสำคัญที่ต้องใช้ password_verify()
-        if (password_verify($password, $user['password'])) {
-            
-            // ✅ เข้าสู่ระบบสำเร็จ
-            $_SESSION['loggedin'] = true; // ตั้งค่า Session Flag
-            $_SESSION['username'] = $user['username']; // ตั้งค่า Session Username
-            
-            // นำไปยังหน้าหลัก (index.php)
-            header("location: index.php");
-            exit;
+        if ($user) {
+            if (password_verify($password, $user['password'])) {
+                $_SESSION['loggedin'] = true;
+                $_SESSION['username'] = $user['username'];
+                
+                // --- จุดสำคัญที่เพิ่มเข้ามา ---
+                $_SESSION['user_id'] = $user['id']; 
+                // --------------------------
 
+                header("location: index.php");
+                exit;
+            } else {
+                $_SESSION['error'] = "รหัสผ่านไม่ถูกต้อง";
+            }
         } else {
-            // รหัสผ่านไม่ถูกต้อง
-            $_SESSION['error'] = "รหัสผ่านไม่ถูกต้อง";
-            header("location: login.php");
-            exit;
+            $_SESSION['error'] = "ไม่พบชื่อผู้ใช้งาน";
         }
-
-    } else {
-        // ไม่พบชื่อผู้ใช้งาน
-        $_SESSION['error'] = "ไม่พบชื่อผู้ใช้งาน";
         header("location: login.php");
         exit;
+    } catch (PDOException $e) {
+        die("Error: " . $e->getMessage());
     }
-} else {
-    header("location: login.php");
-    exit;
 }
-?>
